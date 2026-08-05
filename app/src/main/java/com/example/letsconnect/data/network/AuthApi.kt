@@ -99,7 +99,7 @@ private interface LetsConnectService {
 }
 
 object ServerConfig {
-    const val BASE_URL = "http://192.168.68.76:8080/"
+    const val BASE_URL = "http://192.168.68.63:8080/"
 }
 
 private object RetrofitClient {

@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,6 +81,8 @@ data class Conversation(
     val gradientEnd: Color
 )
 
+private fun userStateKey(value: String): String = value.trim().lowercase(Locale.getDefault())
+
 // ── Home Screen ───────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("UnusedBoxWithConstraintsScope")
@@ -112,12 +115,13 @@ fun Messages(
     var users by remember { mutableStateOf<List<ExposedUser>>(emptyList()) }
     var conversationLastMessages by remember { mutableStateOf<Map<UInt, String>>(emptyMap()) }
     var showRequestDialog by remember { mutableStateOf(false) }
-    var conversationToDelete by remember { mutableStateOf<Conversation?>(null) }
     var targetUsernameInput by remember { mutableStateOf("") }
     var isSendingRequest by remember { mutableStateOf(false) }
 
-    var savedUserIds by remember {
-        val initialSet = prefs.getStringSet("saved_user_ids", null) ?: emptySet()
+    var savedUserNames by remember {
+        val initialSet = prefs.getStringSet("saved_user_names", null)
+            ?: prefs.getStringSet("saved_user_ids", null)
+            ?: emptySet()
         mutableStateOf(initialSet)
     }
 
@@ -185,22 +189,22 @@ fun Messages(
             users = fetchedUsers
 
             val currentUserId = UserSession.userId ?: 1u
-            val newDiscoveredSavedIds = savedUserIds.toMutableSet()
+            val newDiscoveredSavedNames = savedUserNames.toMutableSet()
             val msgMap = mutableMapOf<UInt, String>()
 
             // Check conversations for all other users to automatically discover incoming requests/chats
             fetchedUsers.filter { it.username != UserSession.username }.forEach { otherUser ->
                 val res = MessagesApi.getConversation(currentUserId, otherUser.id)
                 if (res is MessageResult.SuccessList && res.messages.isNotEmpty()) {
-                    newDiscoveredSavedIds.add(otherUser.id.toString())
+                    newDiscoveredSavedNames.add(otherUser.username)
                     val lastMsg = res.messages.lastOrNull()?.content ?: "Tap to view conversation"
                     msgMap[otherUser.id] = lastMsg
                 }
             }
 
-            if (newDiscoveredSavedIds != savedUserIds) {
-                savedUserIds = newDiscoveredSavedIds
-                prefs.edit().putStringSet("saved_user_ids", newDiscoveredSavedIds).apply()
+            if (newDiscoveredSavedNames != savedUserNames) {
+                savedUserNames = newDiscoveredSavedNames
+                prefs.edit().putStringSet("saved_user_names", newDiscoveredSavedNames).apply()
             }
             conversationLastMessages = msgMap
         }
@@ -232,18 +236,23 @@ fun Messages(
     }
 
     // Filter conversations for main screen: show saved & incoming chats, exclude blocked users
-    val savedConversations = remember(users, savedUserIds, blockedUserIds, conversationLastMessages) {
-        val otherUsers = users.filter { it.username != UserSession.username && !blockedUserIds.contains(it.id.toString()) }
-        val activeSavedIds = if (savedUserIds.isEmpty() && otherUsers.isNotEmpty()) {
-            val defaults = otherUsers.take(2).map { it.id.toString() }.toSet()
-            prefs.edit().putStringSet("saved_user_ids", defaults).apply()
+    val savedConversations = remember(users, savedUserNames, blockedUserIds, conversationLastMessages) {
+        val otherUsers = users.filter {
+            val stateKey = userStateKey(it.username)
+            it.username != UserSession.username &&
+                !blockedUserIds.contains(it.id.toString()) &&
+                !blockedUserIds.contains(stateKey)
+        }
+        val activeSavedNames = if (savedUserNames.isEmpty() && otherUsers.isNotEmpty()) {
+            val defaults = otherUsers.take(2).map { it.username }.toSet()
+            prefs.edit().putStringSet("saved_user_names", defaults).apply()
             defaults
         } else {
-            savedUserIds
+            savedUserNames
         }
 
         otherUsers
-            .filter { activeSavedIds.contains(it.id.toString()) }
+            .filter { activeSavedNames.contains(it.username) }
             .mapIndexed { index, user ->
                 val initials = user.username.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").uppercase()
                 val colors = listOf(
@@ -319,9 +328,6 @@ fun Messages(
                 )
             }
 
-            // ── CATEGORY TABS ──────────────────────────────────────────────
-
-
             Spacer(modifier = Modifier.height(4.dp))
 
             // ── CONVERSATION LIST ──────────────────────────────────────────
@@ -343,14 +349,27 @@ fun Messages(
                         }
                     }
                 } else {
-                    items(filtered) { convo ->
-                        ConversationRow(
+                    items(filtered, key = { it.id }) { convo ->
+                        SwipeableConversationRow(
                             conversation = convo,
                             onClick = { onConversationClick(convo) },
-                            onDelete = { conversationToDelete = convo }
+                            onDelete = {
+                                val currentUserId = UserSession.userId ?: 1u
+                                val updatedSaved = savedUserNames - convo.name
+                                savedUserNames = updatedSaved
+                                conversationLastMessages = conversationLastMessages - convo.userId
+                                prefs.edit().putStringSet("saved_user_names", updatedSaved).apply()
+
+                                scope.launch {
+                                    val result = MessagesApi.deleteConversation(currentUserId, convo.userId)
+                                    if (result is MessageResult.Error) {
+                                        Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
                         )
                         HorizontalDivider(
-                            color = Color(0xFFf0f9f9),
+                            color = Color(0xFFF0F9F9),
                             thickness = 0.5.dp,
                             modifier = Modifier.padding(start = 82.dp, end = 18.dp)
                         )
@@ -378,10 +397,10 @@ fun Messages(
                     .height(barHeight)
                     .scale(searchScale)
                     .shadow(
-                        elevation = 12.dp,
+                        elevation = 4.dp,
                         shape = RoundedCornerShape(999.dp),
-                        ambientColor = Color(0xFF0d9488).copy(alpha = 0.25f),
-                        spotColor = Color(0xFF0d9488).copy(alpha = 0.38f)
+                        ambientColor = Color.Black.copy(alpha = 0.08f),
+                        spotColor = Color.Black.copy(alpha = 0.12f)
                     )
                     .clip(RoundedCornerShape(999.dp))
                     .background(Color(0xFFd8f5ee))
@@ -590,9 +609,9 @@ fun Messages(
                                         content = "$currentUsername wants to text you!"
                                     )
                                     if (res is MessageResult.Success) {
-                                        val updatedSet = savedUserIds + matchingUser.id.toString()
-                                        savedUserIds = updatedSet
-                                        prefs.edit().putStringSet("saved_user_ids", updatedSet).apply()
+                                        val updatedSet = savedUserNames + matchingUser.username
+                                        savedUserNames = updatedSet
+                                        prefs.edit().putStringSet("saved_user_names", updatedSet).apply()
 
                                         showRequestDialog = false
                                         isSendingRequest = false
@@ -634,65 +653,99 @@ fun Messages(
             )
         }
 
-        conversationToDelete?.let { convo ->
-            AlertDialog(
-                onDismissRequest = { conversationToDelete = null },
-                title = {
-                    Text(
-                        text = "Delete Chat?",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Cyan700
-                    )
-                },
-                text = {
-                    Text(
-                        text = "Remove ${convo.name} from your messages and delete this conversation?",
-                        fontSize = 13.sp,
-                        color = TextMuted
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val currentUserId = UserSession.userId ?: 1u
-                            val updatedSaved = savedUserIds - convo.userId.toString()
-                            savedUserIds = updatedSaved
-                            conversationLastMessages = conversationLastMessages - convo.userId
-                            prefs.edit().putStringSet("saved_user_ids", updatedSaved).apply()
-                            conversationToDelete = null
-
-                            scope.launch {
-                                val result = MessagesApi.deleteConversation(currentUserId, convo.userId)
-                                if (result is MessageResult.Error) {
-                                    Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                        shape = RoundedCornerShape(999.dp)
-                    ) {
-                        Text("Delete", fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { conversationToDelete = null }) {
-                        Text("Cancel", color = Teal600)
-                    }
-                },
-                containerColor = Color.White,
-                shape = RoundedCornerShape(20.dp)
-            )
-        }
     }
 }
 
-// ── Conversation Row ──────────────────────────────────────────────────────────
+// ── Conversation Row & Swipe To Delete ──────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConversationRow(conversation: Conversation, onClick: () -> Unit, onDelete: () -> Unit) {
+fun SwipeableConversationRow(
+    conversation: Conversation,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { dismissValue ->
+            if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
+            }
+        }
+    )
+
+    val density = LocalDensity.current
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = true,
+        backgroundContent = {
+            val offsetPx = try {
+                kotlin.math.abs(dismissState.requireOffset())
+            } catch (_: Exception) {
+                0f
+            }
+            val swipeWidthDp = with(density) { offsetPx.toDp() }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                if (swipeWidthDp > 4.dp) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(swipeWidthDp)
+                            .padding(vertical = 4.dp, horizontal = 4.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xFFEF4444)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        ) {
+                            if (swipeWidthDp >= 32.dp) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            if (swipeWidthDp >= 78.dp) {
+                                Text(
+                                    text = "Delete",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ) {
+        ConversationRow(
+            conversation = conversation,
+            onClick = onClick
+        )
+    }
+}
+
+@Composable
+fun ConversationRow(conversation: Conversation, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(Color.White)
             .clickable { onClick() }
             .padding(horizontal = 18.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -787,18 +840,6 @@ fun ConversationRow(conversation: Conversation, onClick: () -> Unit, onDelete: (
                     color = Color.White
                 )
             }
-        }
-
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier.size(36.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = "Delete chat",
-                tint = TextMuted,
-                modifier = Modifier.size(18.dp)
-            )
         }
     }
 }

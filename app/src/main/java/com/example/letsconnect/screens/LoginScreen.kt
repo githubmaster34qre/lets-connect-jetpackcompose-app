@@ -1,7 +1,9 @@
 package com.example.letsconnect.screens
 
 import android.content.Context
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,6 +48,7 @@ import com.example.letsconnect.ui.theme.Green600
 import com.example.letsconnect.ui.theme.Surface_
 import com.example.letsconnect.ui.theme.Teal600
 import com.example.letsconnect.ui.theme.TextMuted
+import com.example.letsconnect.ui.theme.TextSub
 import kotlinx.coroutines.launch
 import androidx.credentials.GetCredentialRequest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
@@ -99,13 +102,21 @@ suspend fun triggerGoogleSignIn(context: Context): GoogleSignInResult {
 }
 
 val HeaderGradient = Brush.linearGradient(
-    colors = listOf(Cyan500, Teal600, Green600),
+    colors = listOf(
+        Color(0xFF06b6d4),
+        Color(0xFF0d9488),
+        Color(0xFF059669)
+    ),
     start = Offset(Float.POSITIVE_INFINITY, 0f),
     end = Offset(0f, Float.POSITIVE_INFINITY)
 )
 
 val ButtonGradient = Brush.linearGradient(
-    colors = listOf(Cyan500, Teal600, Green600),
+    colors = listOf(
+        Color(0xFF06b6d4),
+        Color(0xFF0d9488),
+        Color(0xFF059669)
+    ),
     start = Offset(0f, 0f),
     end = Offset(Float.POSITIVE_INFINITY, 0f)
 )
@@ -201,48 +212,50 @@ fun Login(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.35f)
                 .background(brush = HeaderGradient)
-                .padding(28.dp)
+                .padding(horizontal = 28.dp, vertical = 32.dp)
         ) {
+            // Decorative circles
             Box(
                 modifier = Modifier
-                    .size(200.dp)
-                    .offset(x = 60.dp, y = (-60).dp)
+                    .size(220.dp)
+                    .offset(x = 60.dp, y = (-50).dp)
                     .align(Alignment.TopEnd)
                     .background(
-                        color = Color.White.copy(alpha = 0.07f),
+                        color = Color.White.copy(alpha = 0.08f),
                         shape = RoundedCornerShape(100.dp)
                     )
             )
             Box(
                 modifier = Modifier
-                    .size(110.dp)
-                    .offset(x = (-20).dp, y = 20.dp)
+                    .size(130.dp)
+                    .offset(x = (-30).dp, y = 30.dp)
                     .align(Alignment.BottomStart)
                     .background(
-                        color = Color.White.copy(alpha = 0.05f),
+                        color = Color.White.copy(alpha = 0.06f),
                         shape = RoundedCornerShape(100.dp)
                     )
             )
             Column(modifier = Modifier.align(Alignment.BottomStart)) {
                 Text(
                     text = "Let's Connect",
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 38.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     color = Color.White,
-                    letterSpacing = (-0.5).sp,
-                    lineHeight = 42.sp
+                    letterSpacing = (-1).sp,
+                    lineHeight = 44.sp
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "Sign in to your account",
                     fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.65f)
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.8f)
                 )
             }
         }
@@ -255,7 +268,7 @@ fun Login(
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(top = 32.dp, bottom = 24.dp),
+                .padding(top = 28.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Column(
@@ -322,8 +335,8 @@ fun Login(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(top = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 LCGradientButton(
@@ -331,19 +344,26 @@ fun Login(
                     enabled = !isLoading,
                     onClick = { submitLogin() }
                 )
+
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    HorizontalDivider(modifier = Modifier.weight(1f), color = BorderColor)
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = Color(0xFFE2E8F0)
+                    )
                     Text(
-                        text = "OR",
+                        text = "or continue with",
                         fontSize = 12.sp,
                         color = TextMuted,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 12.dp)
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 14.dp)
                     )
-                    HorizontalDivider(modifier = Modifier.weight(1f), color = BorderColor)
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = Color(0xFFE2E8F0)
+                    )
                 }
 
                 LCGoogleButton(
@@ -353,20 +373,27 @@ fun Login(
                         launchFullGoogleSignIn()
                     }
                 )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
                 Row(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "Don't have an account? ", color = Color.Black)
+                    Text(
+                        text = "Don't have an account?",
+                        color = TextSub,
+                        fontSize = 14.sp
+                    )
                     TextButton(
                         onClick = { onNavigateToSignUp() },
                         enabled = !isLoading,
-                        contentPadding = PaddingValues(0.dp)
+                        contentPadding = PaddingValues(horizontal = 4.dp)
                     ) {
                         Text(
                             text = "Sign Up",
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
                             color = Teal600
                         )
                     }
@@ -404,7 +431,7 @@ fun LCTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = OutlinedTextFieldDefaults.colors(
             unfocusedContainerColor = Surface_,
             focusedContainerColor = Color(0xFFf0fdff),
@@ -437,22 +464,24 @@ fun LCGradientButton(
 ) {
     var buttonPressed by remember { mutableStateOf(false) }
     val buttonScale by animateFloatAsState(
-        targetValue = if (buttonPressed) 1.1f else 1.0f,
+        targetValue = if (buttonPressed) 0.96f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
         label = "ButtonScaleAnimation"
     )
-
-    val barHeight = 52.dp
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(barHeight)
+            .height(54.dp)
             .scale(buttonScale)
             .shadow(
-                elevation = 12.dp,
+                elevation = 8.dp,
                 shape = RoundedCornerShape(999.dp),
-                ambientColor = Color(0xFF0d9488).copy(alpha = 0.25f),
-                spotColor = Color(0xFF0d9488).copy(alpha = 0.38f)
+                ambientColor = Color(0xFF0d9488).copy(alpha = 0.20f),
+                spotColor = Color(0xFF0d9488).copy(alpha = 0.30f)
             )
             .clip(RoundedCornerShape(999.dp))
             .background(brush = ButtonGradient)
@@ -487,14 +516,18 @@ fun LCGoogleButton(
 ) {
     var buttonPressed by remember { mutableStateOf(false) }
     val buttonScale by animateFloatAsState(
-        targetValue = if (buttonPressed) 1.1f else 1f,
+        targetValue = if (buttonPressed) 0.96f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
         label = "GoogleButtonScale"
     )
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(54.dp)
             .scale(buttonScale)
             .clip(RoundedCornerShape(999.dp))
             .background(Surface_)

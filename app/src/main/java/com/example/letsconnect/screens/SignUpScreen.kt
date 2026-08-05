@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -116,7 +117,7 @@ fun SignUp(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
 
         // ── HEADER — 35% of screen ────────────────────────────────────────
         Box(
@@ -128,51 +129,52 @@ fun SignUp(
         ) {
             Box(
                 modifier = Modifier
-                    .size(160.dp)
+                    .size(200.dp)
                     .offset(x = (-50).dp, y = (-50).dp)
                     .align(Alignment.TopStart)
                     .background(
-                        color = Color.White.copy(alpha = 0.07f),
+                        color = Color.White.copy(alpha = 0.10f),
                         shape = RoundedCornerShape(100.dp)
                     )
             )
             Box(
                 modifier = Modifier
-                    .size(100.dp)
+                    .size(120.dp)
                     .offset(x = 20.dp, y = 20.dp)
                     .align(Alignment.BottomEnd)
                     .background(
-                        color = Color.White.copy(alpha = 0.05f),
+                        color = Color.White.copy(alpha = 0.08f),
                         shape = RoundedCornerShape(100.dp)
                     )
             )
             Column(modifier = Modifier.align(Alignment.BottomStart)) {
                 Text(
                     text = "Create Account",
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 38.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     color = Color.White,
-                    letterSpacing = (-0.5).sp,
-                    lineHeight = 40.sp
+                    letterSpacing = (-1).sp,
+                    lineHeight = 44.sp
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "Join Let's Connect today",
                     fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.65f)
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.8f)
                 )
             }
         }
 
-        // ── FORM — 65% of screen, scrollable ─────────────────────────────
+        // ── FORM — 64% of screen, scrollable ─────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.65f)
+                .weight(0.64f)
                 .background(Color.White)
                 .imePadding()
                 .padding(horizontal = 24.dp)
-                .padding(top = 24.dp, bottom = 24.dp),
+                .padding(top = 20.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Column(modifier = Modifier.verticalScroll(rememberScrollState(), isKeyboardOpen) ){

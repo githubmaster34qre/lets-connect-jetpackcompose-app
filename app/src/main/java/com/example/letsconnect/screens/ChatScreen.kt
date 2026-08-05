@@ -14,6 +14,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,7 +61,6 @@ import com.example.letsconnect.ui.theme.Cyan700
 import com.example.letsconnect.ui.theme.Green600
 import com.example.letsconnect.ui.theme.Teal600
 import com.example.letsconnect.ui.theme.TextMuted
-import com.google.ai.client.generativeai.type.content
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -179,6 +181,8 @@ class AudioPlayerHelper {
     }
 }
 
+private fun userStateKey(value: String): String = value.trim().lowercase(Locale.getDefault())
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun Chat(
@@ -190,6 +194,7 @@ fun Chat(
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("lets_connect_saved_chats", Context.MODE_PRIVATE) }
+    val receiverStateKey = remember(receiverName) { userStateKey(receiverName) }
 
     var blockedUserIds by remember {
         val set = prefs.getStringSet("blocked_user_ids", null) ?: emptySet()
@@ -200,13 +205,14 @@ fun Chat(
         mutableStateOf(set)
     }
 
-    var isBlocked by remember(blockedUserIds, receiverId) {
-        mutableStateOf(blockedUserIds.contains(receiverId.toString()))
+    var isBlocked by remember(blockedUserIds, receiverId, receiverStateKey) {
+        mutableStateOf(blockedUserIds.contains(receiverId.toString()) || blockedUserIds.contains(receiverStateKey))
     }
 
     var messages by remember { mutableStateOf<List<Message>>(emptyList()) }
     var messageText by remember { mutableStateOf("") }
     var editingMessageId by remember { mutableStateOf<UInt?>(null) }
+    var actionMessage by remember { mutableStateOf<Message?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var composePressed by remember { mutableStateOf(false) }
@@ -313,7 +319,7 @@ fun Chat(
         messages.firstOrNull { it.content.contains("Accepted connection request") || it.content.contains("accepted your request") }
     }
 
-    val isAcceptedLocally = acceptedUserIds.contains(receiverId.toString())
+    val isAcceptedLocally = acceptedUserIds.contains(receiverId.toString()) || acceptedUserIds.contains(receiverStateKey)
     val isAccepted = acceptMsg != null || isAcceptedLocally
 
     val isSenderOfRequest = requestMsg != null && requestMsg.senderId == currentUserId
@@ -431,7 +437,7 @@ fun Chat(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "📩 Connection Request",
+                            text = "Connection Request",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = Cyan700
@@ -451,7 +457,7 @@ fun Chat(
                             // YES (Accept)
                             Button(
                                 onClick = {
-                                    val updatedAccepted = acceptedUserIds + receiverId.toString()
+                                    val updatedAccepted = acceptedUserIds + setOf(receiverId.toString(), receiverStateKey)
                                     acceptedUserIds = updatedAccepted
                                     prefs.edit().putStringSet("accepted_user_ids", updatedAccepted).apply()
                                     scope.launch {
@@ -471,7 +477,7 @@ fun Chat(
                             // NO (Block)
                             Button(
                                 onClick = {
-                                    val updatedBlocked = blockedUserIds + receiverId.toString()
+                                    val updatedBlocked = blockedUserIds + setOf(receiverId.toString(), receiverStateKey)
                                     blockedUserIds = updatedBlocked
                                     prefs.edit().putStringSet("blocked_user_ids", updatedBlocked).apply()
                                     isBlocked = true
@@ -560,6 +566,10 @@ fun Chat(
                         isFromCurrentUser = message.senderId == currentUserId,
                         context = context,
                         audioPlayer = audioPlayer,
+                        showActions = actionMessage?.id == message.id,
+                        onLongPress = { messageToManage ->
+                            actionMessage = messageToManage
+                        },
                         onEdit = { messageToEdit ->
                             if (messageToEdit.content.startsWith("VOICE_NOTE_")) {
                                 Toast.makeText(context, "Voice messages can't be edited", Toast.LENGTH_SHORT).show()
@@ -567,9 +577,11 @@ fun Chat(
                                 editingMessageId = messageToEdit.id
                                 messageText = messageToEdit.content
                             }
+                            actionMessage = null
                         },
                         onDelete = { messageToDelete ->
                             val messageId = messageToDelete.id
+                            actionMessage = null
                             if (messageId != null) {
                                 scope.launch {
                                     val result = MessagesApi.deleteMessage(messageId)
@@ -593,32 +605,70 @@ fun Chat(
                         .navigationBarsPadding()
                         .imePadding()
                         .padding(16.dp),
-                    color = Color(0xFFFEE2E2),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFCA5A5))
+                    color = Color(0xFFFFFCFC),
+                    shape = RoundedCornerShape(26.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFECACA))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "🚫 You have blocked this user",
-                            color = Color(0xFF991B1B),
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
+                        Box(
+                            modifier = Modifier
+                                .size(width = 5.dp, height = 42.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFF43F5E))
                         )
-                        TextButton(
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFFE4E6)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = Color(0xFFE11D48),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Blocked",
+                                color = Color(0xFF881337),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                text = "This person can’t send messages until you unblock them.",
+                                color = Color(0xFF9F1239).copy(alpha = 0.80f),
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                        Surface(
                             onClick = {
-                                val updatedBlocked = blockedUserIds - receiverId.toString()
+                                val updatedBlocked = blockedUserIds - setOf(receiverId.toString(), receiverStateKey)
                                 blockedUserIds = updatedBlocked
                                 prefs.edit().putStringSet("blocked_user_ids", updatedBlocked).apply()
                                 isBlocked = false
-                            }
+                            },
+                            shape = RoundedCornerShape(999.dp),
+                            color = Color(0xFFFFE4E6),
+                            border = BorderStroke(1.dp, Color(0xFFFDA4AF))
                         ) {
-                            Text("Unblock", color = Color(0xFFDC2626), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(
+                                text = "Unblock",
+                                color = Color(0xFFE11D48),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                            )
                         }
                     }
                 }
@@ -629,22 +679,47 @@ fun Chat(
                         .navigationBarsPadding()
                         .imePadding()
                         .padding(16.dp),
-                    color = Color(0xFFF1F5F9),
-                    shape = RoundedCornerShape(16.dp)
+                    color = Color(0xFFF8FAFC),
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0))
                 ) {
-                    Box(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 14.dp),
-                        contentAlignment = Alignment.Center
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = if (isSenderOfRequest) "Waiting for $receiverName to accept your request..." else "Accept request above to reply",
-                            color = TextMuted,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEFFBF7)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = Teal600,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isSenderOfRequest) "Waiting for $receiverName to accept your request..." else "Accept the request above to reply.",
+                                color = Color(0xFF475569),
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                lineHeight = 17.sp
+                            )
+                            Text(
+                                text = "Messages stay locked until the connection is accepted.",
+                                color = Color(0xFF64748B),
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 11.5.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
                     }
                 }
             } else if (isRecordingAudio) {
@@ -825,7 +900,7 @@ fun Chat(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White)
+                        .background(Color.Transparent)
                         .navigationBarsPadding()
                         .imePadding()
                         .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -839,13 +914,14 @@ fun Chat(
                             .weight(1f)
                             .height(50.dp)
                             .shadow(
-                                elevation = 6.dp,
+                                elevation = 12.dp,
                                 shape = RoundedCornerShape(999.dp),
-                                ambientColor = Color(0xFF0d9488).copy(alpha = 0.15f),
-                                spotColor = Color(0xFF0d9488).copy(alpha = 0.25f)
+                                ambientColor = Color(0xFF0d9488).copy(alpha = 0.22f),
+                                spotColor = Color(0xFF0d9488).copy(alpha = 0.32f)
                             )
                             .clip(RoundedCornerShape(999.dp))
-                            .background(Color(0xFFEFFBF7))
+                            .background(Color(0xFFD8F5EE))
+                            .border(BorderStroke(1.dp, Color(0xFFCCFBF1)), RoundedCornerShape(999.dp))
                             .padding(horizontal = 16.dp),
                         textStyle = TextStyle(
                             fontSize = 15.sp,
@@ -867,7 +943,7 @@ fun Chat(
                                         Text(
                                             "Type a message...",
                                             fontSize = 15.sp,
-                                            color = Teal600.copy(alpha = 0.7f)
+                                            color = Teal600.copy(alpha = 0.72f)
                                         )
                                     }
                                     innerTextField()
@@ -889,6 +965,7 @@ fun Chat(
                                     }
 
                                     when (result) {
+
                                         is MessageResult.Success -> {
                                             if (editingId != null) {
                                                 messages = messages.map {
@@ -913,11 +990,11 @@ fun Chat(
                             }
                         },
                         interactionSource = interactionSource,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .scale(composeScale)
-                            .shadow(
-                                elevation = 10.dp,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .scale(composeScale)
+                                .shadow(
+                                    elevation = 10.dp,
                                 shape = CircleShape,
                                 ambientColor = Color(0xFF06b6d4).copy(alpha = 0.4f),
                                 spotColor = Color(0xFF06b6d4).copy(alpha = 0.6f)
@@ -941,6 +1018,7 @@ fun Chat(
                 }
             }
         }
+
     }
 }
 
@@ -950,183 +1028,211 @@ fun MessageBubble(
     isFromCurrentUser: Boolean,
     context: Context = LocalContext.current,
     audioPlayer: AudioPlayerHelper? = null,
+    showActions: Boolean = false,
+    onLongPress: (Message) -> Unit = {},
     onEdit: (Message) -> Unit = {},
     onDelete: (Message) -> Unit = {}
 ) {
+    val bubbleShape = if (isFromCurrentUser) {
+        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 4.dp)
+    } else {
+        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 20.dp)
+    }
+    val isVoiceNote = message.content.startsWith("VOICE_NOTE_URL:") || message.content.startsWith("VOICE_NOTE_DATA:")
+
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 3.dp),
         horizontalArrangement = if (isFromCurrentUser) Arrangement.End else Arrangement.Start
     ) {
-        val bubbleShape = if (isFromCurrentUser) {
-            RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 4.dp)
-        } else {
-            RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 4.dp, bottomEnd = 18.dp)
-        }
-
-        val isVoiceNote = message.content.startsWith("VOICE_NOTE_URL:") || message.content.startsWith("VOICE_NOTE_DATA:")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         Box(
             modifier = Modifier
-                .shadow(
-                    elevation = if (isFromCurrentUser) 3.dp else 1.dp,
-                    shape = bubbleShape,
-                    ambientColor = if (isFromCurrentUser) Cyan500.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.05f),
-                    spotColor = if (isFromCurrentUser) Cyan500.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.08f)
+                .widthIn(max = 290.dp)
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = {
+                        if (isFromCurrentUser && message.id != null) {
+                            onLongPress(message)
+                        }
+                    }
                 )
-                .background(
-                    brush = if (isFromCurrentUser) {
-                        Brush.linearGradient(
-                            colors = listOf(Cyan500, Teal600),
-                            start = Offset(0f, 0f),
-                            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                        )
-                    } else {
-                        SolidColor(Color(0xFFF1F5F9))
-                    },
-                    shape = bubbleShape
-                )
-                .then(
-                    if (!isFromCurrentUser) {
-                        Modifier.border(BorderStroke(0.5.dp, Color(0xFFCBD5E1)), bubbleShape)
-                    } else Modifier
-                )
-                .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
-            Column {
-                if (isVoiceNote) {
-                    val isUrlVoiceNote = message.content.startsWith("VOICE_NOTE_URL:")
-                    val rawContent = if (isUrlVoiceNote) {
-                        message.content.removePrefix("VOICE_NOTE_URL:")
-                    } else {
-                        message.content.removePrefix("VOICE_NOTE_DATA:")
-                    }
-                    val parts = rawContent.split("|")
-                    val audioSource = if (parts.size >= 2) parts[0] else ""
-                    val duration = if (parts.size >= 2) parts[1] else "0:00"
-                    
-                    var filePath = ""
-                    if (isUrlVoiceNote) {
-                        filePath = if (audioSource.startsWith("http")) {
-                            audioSource
+            Box(
+                modifier = Modifier
+                    .shadow(
+                        elevation = if (isFromCurrentUser) 2.dp else 1.dp,
+                        shape = bubbleShape,
+                        ambientColor = if (isFromCurrentUser) Cyan500.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.05f),
+                        spotColor = if (isFromCurrentUser) Cyan500.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.08f)
+                    )
+                    .background(
+                        brush = if (isFromCurrentUser) {
+                            Brush.linearGradient(
+                                colors = listOf(Cyan500, Teal600),
+                                start = Offset(0f, 0f),
+                                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                            )
                         } else {
-                            ServerConfig.BASE_URL.trimEnd('/') + audioSource
+                            SolidColor(Color(0xFFF1F5F9))
+                        },
+                        shape = bubbleShape
+                    )
+                    .then(
+                        if (!isFromCurrentUser) {
+                            Modifier.border(BorderStroke(0.5.dp, Color(0xFFE2E8F0)), bubbleShape)
+                        } else Modifier
+                    )
+                    .padding(horizontal = 14.dp, vertical = 9.dp)
+            ) {
+                Column {
+                    if (isVoiceNote) {
+                        val isUrlVoiceNote = message.content.startsWith("VOICE_NOTE_URL:")
+                        val rawContent = if (isUrlVoiceNote) {
+                            message.content.removePrefix("VOICE_NOTE_URL:")
+                        } else {
+                            message.content.removePrefix("VOICE_NOTE_DATA:")
                         }
-                    } else if (audioSource.isNotEmpty()) {
-                        try {
-                            val bytes = android.util.Base64.decode(audioSource, android.util.Base64.DEFAULT)
-                            val tempFile = File(context.cacheDir, "voice_note_${message.hashCode()}.m4a")
-                            if (!tempFile.exists()) {
-                                tempFile.writeBytes(bytes)
-                            }
-                            filePath = tempFile.absolutePath
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
-                    
-                    val fileExists = filePath.startsWith("http") || (filePath.isNotEmpty() && File(filePath).exists())
-                    val isThisPlaying = audioPlayer?.playing == true && audioPlayer.currentPlayingFile == filePath
+                        val parts = rawContent.split("|")
+                        val audioSource = if (parts.size >= 2) parts[0] else ""
+                        val duration = if (parts.size >= 2) parts[1] else "0:00"
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    ) {
-                        // Play/Pause Button
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (isFromCurrentUser) Color.White.copy(alpha = 0.25f) else Cyan500.copy(
-                                        alpha = 0.15f
-                                    )
-                                )
-                                .clickable(enabled = fileExists) {
-                                    if (fileExists && audioPlayer != null) {
-                                        audioPlayer.togglePlayPause(filePath)
-                                    } else if (!fileExists) {
-                                        Toast.makeText(context, "Voice note is not available", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
+                        var filePath = ""
+                        if (isUrlVoiceNote) {
+                            filePath = if (audioSource.startsWith("http")) {
+                                audioSource
+                            } else {
+                                ServerConfig.BASE_URL.trimEnd('/') + audioSource
+                            }
+                        } else if (audioSource.isNotEmpty()) {
+                            try {
+                                val bytes = android.util.Base64.decode(audioSource, android.util.Base64.DEFAULT)
+                                val tempFile = File(context.cacheDir, "voice_note_${message.hashCode()}.m4a")
+                                if (!tempFile.exists()) {
+                                    tempFile.writeBytes(bytes)
+                                }
+                                filePath = tempFile.absolutePath
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+
+                        val fileExists = filePath.startsWith("http") || (filePath.isNotEmpty() && File(filePath).exists())
+                        val isThisPlaying = audioPlayer?.playing == true && audioPlayer.currentPlayingFile == filePath
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.padding(vertical = 4.dp)
                         ) {
-                            Icon(
-                                imageVector = if (isThisPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = "Play Audio",
-                                tint = if (isFromCurrentUser) Color.White else Cyan700,
-                                modifier = Modifier.size(20.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isFromCurrentUser) Color.White.copy(alpha = 0.25f) else Cyan500.copy(alpha = 0.15f)
+                                    )
+                                    .clickable(enabled = fileExists) {
+                                        if (fileExists && audioPlayer != null) {
+                                            audioPlayer.togglePlayPause(filePath)
+                                        } else if (!fileExists) {
+                                            Toast.makeText(context, "Voice note is not available", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isThisPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = "Play Audio",
+                                    tint = if (isFromCurrentUser) Color.White else Cyan700,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val barHeights = listOf(10, 18, 14, 24, 16, 28, 20, 12, 22, 16, 26, 14, 18, 10)
+                                barHeights.forEach { h ->
+                                    Box(
+                                        modifier = Modifier
+                                            .width(3.dp)
+                                            .height(h.dp)
+                                            .clip(RoundedCornerShape(999.dp))
+                                            .background(
+                                                if (isFromCurrentUser) Color.White.copy(alpha = 0.85f) else Cyan500
+                                            )
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = duration,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isFromCurrentUser) Color.White.copy(alpha = 0.9f) else Cyan700
                             )
                         }
-
-                        // Audio Waveform Visualization
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(2.5.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val barHeights = listOf(10, 18, 14, 24, 16, 28, 20, 12, 22, 16, 26, 14, 18, 10)
-                            barHeights.forEach { h ->
-                                Box(
-                                    modifier = Modifier
-                                        .width(3.dp)
-                                        .height(h.dp)
-                                        .clip(RoundedCornerShape(999.dp))
-                                        .background(
-                                            if (isFromCurrentUser) Color.White.copy(alpha = 0.85f) else Cyan500
-                                        )
-                                )
-                            }
-                        }
-
+                    } else {
                         Text(
-                            text = duration,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isFromCurrentUser) Color.White.copy(alpha = 0.9f) else Cyan700
+                            text = message.content,
+                            color = if (isFromCurrentUser) Color.White else Color(0xFF0F172A),
+                            fontSize = 15.sp,
+                            lineHeight = 21.sp,
+                            fontWeight = FontWeight.Normal
                         )
                     }
-                } else {
-                    Text(
-                        text = message.content,
-                        color = if (isFromCurrentUser) Color.White else Cyan700,
-                        fontSize = 15.sp,
-                        lineHeight = 20.sp
-                    )
-                }
 
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.align(Alignment.End)
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(
+                            text = formatTimestamp(message.timestamp),
+                            color = if (isFromCurrentUser) Color.White.copy(alpha = 0.8f) else Color(0xFF64748B),
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (isFromCurrentUser) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.DoneAll,
+                                contentDescription = "Read",
+                                tint = Color.White.copy(alpha = 0.9f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (showActions && isFromCurrentUser ) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(y = (-10).dp)
+                        .padding(top = if (isVoiceNote) 90.dp else 67.dp),
+                    horizontalAlignment = Alignment.End,
                 ) {
-                    Text(
-                        text = formatTimestamp(message.timestamp),
-                        color = if (isFromCurrentUser) Color.White.copy(alpha = 0.75f) else Color(0xFF94A3B8),
-                        fontSize = 10.sp
-                    )
-                    if (isFromCurrentUser) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.DoneAll,
-                            contentDescription = "Read",
-                            tint = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.size(14.dp)
+                    if (!isVoiceNote) {
+                        BubbleActionChip(
+                            icon = Icons.Default.Edit,
+                            label = "Edit",
+                            tint = Color(0xFF0F766E),
+                            background = Color(0xFFE6FFFB),
+                            onClick = { onEdit(message) }
                         )
                     }
+                    BubbleActionChip(
+                        icon = Icons.Default.Delete,
+                        label = "Delete",
+                        tint = Color(0xFFE11D48),
+                        background = Color(0xFFFFE4E6),
+                        onClick = { onDelete(message) }
+                    )
                 }
             }
         }
@@ -1148,5 +1254,42 @@ private fun formatTimestamp(timestamp: String): String {
         }
     } catch (e: Exception) {
         timestamp
+    }
+}
+
+@Composable
+private fun BubbleActionChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    background: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(999.dp),
+        color = background,
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.10f))
+    ) {
+        Row(
+            modifier = Modifier
+                .height(34.dp)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = tint,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = label,
+                color = tint,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
